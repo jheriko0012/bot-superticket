@@ -1,6 +1,9 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from bs4 import BeautifulSoup
 import requests
+from flask import Flask
+import threading
+import time
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
@@ -8,6 +11,16 @@ TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
 URL_EVENTO = "https://superticket.bo/La-Bicicleta-de-los-Huanca-II"
 URL_PRINCIPAL = "https://superticket.bo/"
+
+# -------- Flask para mantener vivo el bot en Railway/UptimeRobot --------
+app_flask = Flask(__name__)
+
+@app_flask.route("/")
+def home():
+    return "Bot activo y monitoreando el evento ✅"
+
+def run_flask():
+    app_flask.run(host="0.0.0.0", port=5000)
 
 # -------- Función para revisar el estado del evento --------
 def revisar_evento():
@@ -17,6 +30,8 @@ def revisar_evento():
 
     try:
         response = requests.get(URL_EVENTO, timeout=10)
+        html_crudo = response.text
+
         if response.url == URL_PRINCIPAL:
             mensajes.append("🔒 Evento aún no activo")
             estado_boton = "NO DISPONIBLE"
@@ -27,43 +42,28 @@ def revisar_evento():
             estado_boton = "NO DISPONIBLE"
             url_actual = response.url
             return mensajes, estado_boton, url_actual
+
     except Exception as e:
         mensajes.append(f"❌ Error al cargar la página: {e}")
         return mensajes, estado_boton, url_actual
 
-    # Página del evento activa
-    mensajes.append("✅ Evento habilitado")
-    url_actual = response.url
-
-    soup = BeautifulSoup(response.text, "lxml")
-
-    # -------- Buscar el botón de compra --------
-    boton = soup.select_one("a.boton_compra")  # busca por clase
-    if not boton:
-        boton = soup.select_one("#div_boton_compra a")  # busca dentro del div si no lo encuentra
-
-    if boton:
-        texto_boton = boton.get_text(strip=True).upper()
-        clases_boton = [c.lower() for c in (boton.get("class") or [])]  # minúsculas para comparar
-        if "aún no disponible" in texto_boton.lower() or "aun no disponible" in texto_boton.lower():
-            estado_boton = "NO DISPONIBLE"
-            mensajes.append("🔒 La compra NO está habilitada")
-        elif any("btn-success" in c for c in clases_boton) or "COMPRAR" in texto_boton:
-            estado_boton = "COMPRAR"
-            mensajes.append("✅ La compra está habilitada")
+    # Revisar si existe la sección completa del botón de compra
+    if '<div id="div_boton_compra">' in html_crudo and 'COMPRAR' in html_crudo.upper():
+        estado_boton = "COMPRAR"
+        mensajes.append("✅ La compra está habilitada")
     else:
-        mensajes.append("ℹ️ Página del evento activa, pero sin botón de compra")
+        estado_boton = "NO DISPONIBLE"
+        mensajes.append("🔒 La compra NO está habilitada")
 
+    url_actual = response.url
     return mensajes, estado_boton, url_actual
 
 # -------- Job de monitoreo --------
 async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
-    print("🔍 Analizando la página del evento...")
     mensajes, estado_boton, url_actual = revisar_evento()
-    print(f"📊 Estado actual: {estado_boton}, URL: {url_actual}")
     texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
     await context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
-    print("✅ Mensaje enviado a Telegram\n")
+    print(f"[Monitoreo] {estado_boton} | URL: {url_actual}")
 
 # -------- Comandos --------
 async def start(update, context):
@@ -99,6 +99,10 @@ async def ayuda(update, context):
 
 # -------- Main --------
 def main():
+    # Correr Flask en un hilo aparte
+    threading.Thread(target=run_flask).start()
+
+    # Crear aplicación de Telegram
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Agregar handlers
@@ -111,10 +115,7 @@ def main():
     # Job que revisa el evento cada INTERVALO_MONITOREO segundos
     app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
-    print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
-    print(f"⏱ El bot empezará a monitorear la página cada {INTERVALO_MONITOREO} segundos.")
-
-    # Esto permite que UptimeRobot lo mantenga activo
+    print("🚀 Bot iniciado correctamente y monitoreando la página...")
     app.run_polling()
 
 if __name__ == "__main__":
