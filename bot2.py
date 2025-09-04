@@ -1,90 +1,86 @@
+import asyncio
 import requests
 from bs4 import BeautifulSoup
-import asyncio
 from telegram import Bot, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ---------------- CONFIGURACIÓN ----------------
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
+CHAT_ID = 6944124547
 URL = "https://superticket.bo/Venta-de-Metros-Lineales"
-INTERVALO_MONITOREO = 60  # en segundos
+INTERVALO_MONITOREO = 30  # en segundos
+
+ultimo_estado = None
 
 bot = Bot(token=TOKEN)
-chat_id_global = None  # Se llenará cuando un usuario haga /start
 
 # ---------------- FUNCIONES ----------------
-def obtener_estado_pagina():
-    """Revisa la página y devuelve el estado de la compra."""
+def obtener_estado():
+    """Devuelve el estado actual de la página y un mensaje descriptivo."""
     try:
-        resp = requests.get(URL, timeout=15)
+        resp = requests.get(URL, timeout=10)
         if resp.status_code != 200:
-            return f"❌ No se pudo acceder a la página. Status: {resp.status_code}"
+            return f"❌ No se pudo acceder a la página ({resp.status_code})", False
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(resp.text, 'html.parser')
 
+        # Detectar overlay de evento cerrado
         overlay = soup.select_one(".overlay-content")
-        if overlay and "Evento finalizado" in overlay.get_text():
-            return "❌ El evento sigue cerrado"
+        if overlay and "Evento finalizado" in overlay.text:
+            return "❌ El evento sigue cerrado", False
 
+        # Detectar botón de compra
         boton = soup.select_one("a.boton_compra")
         if boton:
-            texto_boton = boton.get_text().strip().upper()
-            clases_boton = boton.get("class", [])
-            if "AÚN NO DISPONIBLE" in texto_boton or "AUN NO DISPONIBLE" in texto_boton:
-                return f"🔒 La compra NO está habilitada\n{URL}"
-            elif "COMPRAR" in texto_boton or "btn-success" in clases_boton:
-                return f"✅ La compra está habilitada\n{URL}"
+            texto = boton.get_text(strip=True).upper()
+            clases = boton.get("class", [])
+            if "AÚN NO DISPONIBLE" in texto or "AUN NO DISPONIBLE" in texto:
+                return "🔒 La compra NO está habilitada", False
+            elif "COMPRAR" in texto or "btn-success" in clases:
+                return "✅ La compra está habilitada", True
 
-        return f"🔒 El evento aún no está habilitado\n{URL}"
+        # Si la página carga pero no hay overlay ni botón
+        if not overlay and not boton:
+            return "✅ Página abierta, pero sin información de compra", True
+
+        # Caso por defecto
+        return "🔒 El evento aún no está habilitado", False
 
     except Exception as e:
-        return f"❌ Error al revisar la página: {e}"
+        return f"❌ Error al acceder a la página: {e}", False
 
-# ---------------- COMANDOS ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global chat_id_global
-    chat_id_global = update.message.chat_id
-    await update.message.reply_text(
-        "🚀 Bot iniciado y guardado tu chat ID para monitoreo automático.\n"
-        "Usa /estado para revisar el estado manualmente o /comandos para ver todos los comandos."
-    )
 
-async def estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    estado_actual = obtener_estado_pagina()
-    await update.message.reply_text(estado_actual)
-
-async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "📌 Comandos disponibles:\n"
-        "/start - Guardar tu chat para recibir mensajes automáticos\n"
-        "/estado - Revisar el estado actual de la página\n"
-        "/comandos - Mostrar los comandos disponibles"
-    )
-    await update.message.reply_text(msg)
-
-# ---------------- MONITOREO PERIÓDICO ----------------
-async def monitoreo_periodico():
+async def enviar_estado_si_cambia():
+    """Monitorea periódicamente y envía mensajes solo si hay cambios."""
+    global ultimo_estado
     while True:
-        if chat_id_global is not None:
-            estado_actual = obtener_estado_pagina()
-            try:
-                await bot.send_message(chat_id=chat_id_global, text=estado_actual)
-            except Exception as e:
-                print(f"❌ Error enviando Telegram: {e}")
+        estado_actual, positivo = obtener_estado()
+        mensaje_completo = f"{estado_actual}\n{URL}"
+        if estado_actual != ultimo_estado:
+            await bot.send_message(chat_id=CHAT_ID, text=mensaje_completo)
+            ultimo_estado = estado_actual
         await asyncio.sleep(INTERVALO_MONITOREO)
 
-# ---------------- EJECUTAR ----------------
+
+# ---------------- COMANDOS ----------------
+async def comando_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /estado para revisar el estado manualmente."""
+    estado_actual, positivo = obtener_estado()
+    mensaje = f"{estado_actual}\n{URL}"
+    await update.message.reply_text(mensaje)
+
+
+# ---------------- MAIN ----------------
 async def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("estado", estado))
-    app.add_handler(CommandHandler("comandos", comandos))
+    app.add_handler(CommandHandler("estado", comando_estado))
+    
+    # Lanzar el monitoreo periódico en paralelo
+    asyncio.create_task(enviar_estado_si_cambia())
 
-    # Iniciar monitoreo periódico
-    asyncio.create_task(monitoreo_periodico())
-
-    print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
+    # Ejecutar el bot
     await app.run_polling()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
