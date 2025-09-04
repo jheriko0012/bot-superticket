@@ -8,15 +8,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
 URL = "https://superticket.bo/Venta-de-Metros-Lineales"
-INTERVALO_MONITOREO = 30  # en segundos
+INTERVALO_MONITOREO = 30  # segundos
 
 ultimo_estado = None
-
 bot = Bot(token=TOKEN)
 
 # ---------------- FUNCIONES ----------------
 def obtener_estado():
-    """Devuelve el estado actual de la página y un mensaje descriptivo."""
     try:
         resp = requests.get(URL, timeout=10)
         if resp.status_code != 200:
@@ -43,7 +41,6 @@ def obtener_estado():
         if not overlay and not boton:
             return "✅ Página abierta, pero sin información de compra", True
 
-        # Caso por defecto
         return "🔒 El evento aún no está habilitado", False
 
     except Exception as e:
@@ -51,7 +48,6 @@ def obtener_estado():
 
 
 async def enviar_estado_si_cambia():
-    """Monitorea periódicamente y envía mensajes solo si hay cambios."""
     global ultimo_estado
     while True:
         estado_actual, positivo = obtener_estado()
@@ -64,7 +60,6 @@ async def enviar_estado_si_cambia():
 
 # ---------------- COMANDOS ----------------
 async def comando_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /estado para revisar el estado manualmente."""
     estado_actual, positivo = obtener_estado()
     mensaje = f"{estado_actual}\n{URL}"
     await update.message.reply_text(mensaje)
@@ -74,13 +69,24 @@ async def comando_estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("estado", comando_estado))
-    
-    # Lanzar el monitoreo periódico en paralelo
+
+    # Lanzar monitoreo periódico en paralelo
     asyncio.create_task(enviar_estado_si_cambia())
 
     # Ejecutar el bot
-    await app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
 
 
+# ---------------- EJECUCIÓN ----------------
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
+    except RuntimeError:
+        # En entornos que ya tienen loop en ejecución
+        asyncio.create_task(main())
+
