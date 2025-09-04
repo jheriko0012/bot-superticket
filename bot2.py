@@ -2,11 +2,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from bs4 import BeautifulSoup
 import requests
 import time
+import threading
+from flask import Flask
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
-TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"  # reemplaza con tu token
-CHAT_ID = 6944124547
+TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"  # tu token
+CHAT_ID = 6944124547  # tu chat id
 URL_EVENTO = "https://superticket.bo/Venta-de-Metros-Lineales"  # URL del evento
 URL_PRINCIPAL = "https://superticket.bo/"
 
@@ -38,7 +40,6 @@ def revisar_evento():
     url_actual = response.url
 
     soup = BeautifulSoup(response.text, "lxml")
-
     boton = soup.select_one("a.boton_compra")
     if boton:
         texto_boton = boton.get_text(strip=True).upper()
@@ -66,26 +67,38 @@ async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
 # -------- Comandos --------
 async def start(update, context):
-    await update.message.reply_text("Bot iniciado!")
+    await update.message.reply_text("🚀 Bot iniciado y listo para monitorear eventos!")
 
 async def comandos(update, context):
     await update.message.reply_text("/start - Inicia el bot\n/comandos - Lista de comandos")
 
+# -------- Flask para mantener Railway despierto --------
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def ping():
+    return "Bot activo", 200
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=5000)
+
 # -------- Main --------
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    # Hilo para Flask
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
 
+    # Bot de Telegram
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("comandos", comandos))
-
-    # Job que revisa el evento cada INTERVALO_MONITOREO segundos
     app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
     print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
     print(f"⏱ El bot empezará a monitorear la página cada {INTERVALO_MONITOREO} segundos.")
+    print("🔍 Analizando la página del evento...")
 
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-
