@@ -1,81 +1,88 @@
-import time
 import requests
 from bs4 import BeautifulSoup
 from telegram import Bot
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import asyncio
 
-# ---------------- CONFIGURACIÓN ----------------
+# ---------------- CONFIG ----------------
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
-CHAT_ID = 6944124547
-URL = "https://superticket.bo/Venta-de-Metros-Lineales"
-INTERVALO_MONITOREO = 30  # segundos
-
-ultimo_estado = None
+CHAT_ID = "6944124547"
+URL_EVENTO = "https://superticket.bo/evento/tu-evento"  # Cambia por tu evento real
+INTERVALO_MONITOREO = 60  # en segundos
 
 bot = Bot(token=TOKEN)
 
 # ---------------- FUNCIONES ----------------
-def obtener_estado():
+def revisar_evento():
+    mensajes = []
     try:
-        resp = requests.get(URL, timeout=10)
-        if resp.status_code != 200:
-            return f"❌ No se pudo acceder a la página ({resp.status_code})", False
-
-        soup = BeautifulSoup(resp.text, 'html.parser')
-
-        overlay = soup.select_one(".overlay-content")
-        if overlay and "Evento finalizado" in overlay.text:
-            return "❌ El evento sigue cerrado", False
-
-        boton = soup.select_one("a.boton_compra")
-        if boton:
-            texto = boton.get_text(strip=True).upper()
-            clases = boton.get("class", [])
-            if "AÚN NO DISPONIBLE" in texto or "AUN NO DISPONIBLE" in texto:
-                return "🔒 La compra NO está habilitada", False
-            elif "COMPRAR" in texto or "btn-success" in clases:
-                return "✅ La compra está habilitada", True
-
-        if not overlay and not boton:
-            return "✅ Página abierta, pero sin información de compra", True
-
-        return "🔒 El evento aún no está habilitado", False
-
+        respuesta = requests.get(URL_EVENTO, timeout=10, allow_redirects=True)
+        # Si nos redirige a la página principal
+        if respuesta.url.rstrip("/") == "https://superticket.bo":
+            mensajes.append("🔒 Evento aún no activo")
+            estado_boton = "NO DISPONIBLE"
+            return mensajes, estado_boton, respuesta.url
     except Exception as e:
-        return f"❌ Error al acceder a la página: {e}", False
+        mensajes.append(f"❌ Error al cargar la página: {e}")
+        estado_boton = "NO DISPONIBLE"
+        return mensajes, estado_boton, URL_EVENTO
 
+    # Si entramos al evento
+    soup = BeautifulSoup(respuesta.text, "lxml")
 
-def monitorar():
-    global ultimo_estado
-    while True:
-        estado_actual, positivo = obtener_estado()
-        mensaje_completo = f"{estado_actual}\n{URL}"
-        if estado_actual != ultimo_estado:
-            bot.send_message(chat_id=CHAT_ID, text=mensaje_completo)
-            ultimo_estado = estado_actual
-        time.sleep(INTERVALO_MONITOREO)
+    overlay = soup.select_one(".overlay-content")
+    if overlay:
+        texto_overlay = overlay.get_text(strip=True)
+        if "Evento finalizado" in texto_overlay:
+            mensajes.append("❌ El evento sigue cerrado")
 
+    boton = soup.select_one("a.boton_compra")
+    if boton:
+        texto_boton = boton.get_text(strip=True).upper()
+        clases_boton = boton.get("class") or []
+
+        if "COMPRAR" in texto_boton or "btn-success" in clases_boton:
+            estado_boton = "COMPRAR"
+            mensajes.append("✅ La compra está habilitada")
+        else:
+            estado_boton = "NO DISPONIBLE"
+            mensajes.append("🔒 La compra NO está habilitada")
+    else:
+        estado_boton = "NO DISPONIBLE"
+        mensajes.append("🔒 Botón no encontrado")
+
+    mensajes.insert(0, "✅ Evento habilitado")
+    return mensajes, estado_boton, respuesta.url
+
+# ---------------- JOB ----------------
+async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
+    mensajes, estado_boton, url_actual = revisar_evento()
+    texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
+    await bot.send_message(chat_id=CHAT_ID, text=texto_final)
 
 # ---------------- COMANDOS ----------------
-def comando_estado(update, context):
-    estado_actual, positivo = obtener_estado()
-    mensaje = f"{estado_actual}\n{URL}"
-    context.bot.send_message(chat_id=update.effective_chat.id, text=mensaje)
+async def start(update, context):
+    await update.message.reply_text("Bot iniciado y monitoreando el evento.")
 
+async def comandos(update, context):
+    cmds = "/start - Inicia el bot\n/comandos - Muestra comandos disponibles"
+    await update.message.reply_text(cmds)
 
 # ---------------- MAIN ----------------
-def main():
-    # Crear aplicación de telegram
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("estado", comando_estado))
 
-    # Inicia el bot en modo polling
-    app.run_polling(poll_interval=5, timeout=10, drop_pending_updates=True)
+    # Comandos
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("comandos", comandos))
 
-    # Inicia el monitoreo continuo
-    monitorar()
+    # Job de monitoreo
+    app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
+    print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
+    await app.run_polling()
 
+# ---------------- RUN ----------------
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
