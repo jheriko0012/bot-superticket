@@ -45,19 +45,29 @@ def revisar_evento():
 
     # Buscamos el div del botón de compra
     div_boton = soup.find("div", id="div_boton_compra")
-    if div_boton:
-        a_tag = div_boton.find("a", class_="btn-success")
-        if a_tag and "COMPRAR" in a_tag.get_text(strip=True).upper():
+   if div_boton:
+    # Buscar el <a> con clase btn-success
+    a_tag = div_boton.find("a", class_="btn-success")
+    
+    if a_tag:
+        # Obtener el texto del <a> en mayúsculas
+        texto_a = a_tag.get_text(strip=True).upper()
+        
+        # Verificar si contiene la palabra exacta "COMPRA"
+        if "COMPRA" in texto_a.split():
             estado_boton = "COMPRAR"
             mensajes.append("✅ La compra está habilitada")
         else:
             estado_boton = "NO DISPONIBLE"
-            mensajes.append("🔒 La compra NO está habilitada")
+            mensajes.append(f"🔒 La compra NO está habilitada (texto encontrado: '{texto_a}')")
     else:
         estado_boton = "NO DISPONIBLE"
-        mensajes.append("ℹ️ Página activa pero sin botón de compra")
+        mensajes.append("ℹ️ No se encontró el botón de compra")
+else:
+    estado_boton = "NO DISPONIBLE"
+    mensajes.append("ℹ️ Página activa pero sin botón de compra")
 
-    return mensajes, estado_boton, url_actual
+return mensajes, estado_boton, url_actual
 
 
 # -------- Job de monitoreo --------
@@ -133,4 +143,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
