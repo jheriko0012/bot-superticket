@@ -1,34 +1,32 @@
-import requests
-from bs4 import BeautifulSoup
-from telegram import Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import asyncio
+from bs4 import BeautifulSoup
+import requests
+import time
 
-# ---------------- CONFIG ----------------
+# -------- Configuración --------
+INTERVALO_MONITOREO = 60  # segundos
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
-CHAT_ID = "6944124547"
-URL_EVENTO = "https://superticket.bo/evento/tu-evento"  # Cambia por tu evento real
-INTERVALO_MONITOREO = 60  # en segundos
+CHAT_ID = 6944124547
+URL_EVENTO = "https://superticket.bo/evento/..."  # URL del evento
 
-bot = Bot(token=TOKEN)
-
-# ---------------- FUNCIONES ----------------
+# -------- Función para revisar el estado del evento --------
 def revisar_evento():
     mensajes = []
+    estado_boton = "NO DISPONIBLE"
+    url_actual = URL_EVENTO
+
     try:
-        respuesta = requests.get(URL_EVENTO, timeout=10, allow_redirects=True)
-        # Si nos redirige a la página principal
-        if respuesta.url.rstrip("/") == "https://superticket.bo":
-            mensajes.append("🔒 Evento aún no activo")
+        response = requests.get(URL_EVENTO, timeout=10)
+        if response.status_code != 200 or response.url != URL_EVENTO:
+            mensajes.append("🔒 Página aún no activada")
             estado_boton = "NO DISPONIBLE"
-            return mensajes, estado_boton, respuesta.url
+            url_actual = response.url
+            return mensajes, estado_boton, url_actual
     except Exception as e:
         mensajes.append(f"❌ Error al cargar la página: {e}")
-        estado_boton = "NO DISPONIBLE"
-        return mensajes, estado_boton, URL_EVENTO
+        return mensajes, estado_boton, url_actual
 
-    # Si entramos al evento
-    soup = BeautifulSoup(respuesta.text, "lxml")
+    soup = BeautifulSoup(response.text, "lxml")
 
     overlay = soup.select_one(".overlay-content")
     if overlay:
@@ -40,49 +38,47 @@ def revisar_evento():
     if boton:
         texto_boton = boton.get_text(strip=True).upper()
         clases_boton = boton.get("class") or []
-
-        if "COMPRAR" in texto_boton or "btn-success" in clases_boton:
-            estado_boton = "COMPRAR"
-            mensajes.append("✅ La compra está habilitada")
-        else:
+        if "AÚN NO DISPONIBLE" in texto_boton or "AUN NO DISPONIBLE" in texto_boton:
             estado_boton = "NO DISPONIBLE"
             mensajes.append("🔒 La compra NO está habilitada")
-    else:
-        estado_boton = "NO DISPONIBLE"
-        mensajes.append("🔒 Botón no encontrado")
+        elif "btn-success" in clases_boton or "COMPRAR" in texto_boton:
+            estado_boton = "COMPRAR"
+            mensajes.append("✅ La compra está habilitada")
 
-    mensajes.insert(0, "✅ Evento habilitado")
-    return mensajes, estado_boton, respuesta.url
+    if not overlay and not boton:
+        mensajes.append("✅ Página del evento activa, pero sin información específica")
 
-# ---------------- JOB ----------------
+    return mensajes, estado_boton, url_actual
+
+# -------- Job de monitoreo --------
 async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
+    print("🔍 Analizando la página del evento...")
     mensajes, estado_boton, url_actual = revisar_evento()
+    print(f"📊 Estado actual: {estado_boton}, URL: {url_actual}")
     texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-    await bot.send_message(chat_id=CHAT_ID, text=texto_final)
+    await context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
+    print("✅ Mensaje enviado a Telegram\n")
 
-# ---------------- COMANDOS ----------------
+# -------- Comandos --------
 async def start(update, context):
-    await update.message.reply_text("Bot iniciado y monitoreando el evento.")
+    await update.message.reply_text("Bot iniciado!")
 
 async def comandos(update, context):
-    cmds = "/start - Inicia el bot\n/comandos - Muestra comandos disponibles"
-    await update.message.reply_text(cmds)
+    await update.message.reply_text("/start - Inicia el bot\n/comandos - Lista de comandos")
 
-# ---------------- MAIN ----------------
-async def main():
+# -------- Main --------
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Comandos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("comandos", comandos))
 
-    # Job de monitoreo
     app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
     print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
-    await app.run_polling()
+    print(f"⏱ El bot empezará a monitorear la página cada {INTERVALO_MONITOREO} segundos.")
 
-# ---------------- RUN ----------------
+    app.run_polling()
+
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    main()
