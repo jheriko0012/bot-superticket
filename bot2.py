@@ -6,7 +6,7 @@ import requests
 INTERVALO_MONITOREO = 30  # segundos
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
-URL_EVENTO = "https://superticket.bo/Venta-de-Metros-Lineales"
+URL_EVENTO = "https://superticket.bo/La-Bicicleta-de-los-Huanca-II"
 URL_PRINCIPAL = "https://superticket.bo/"
 
 # -------- Función para revisar el estado del evento --------
@@ -114,3 +114,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
