@@ -1,81 +1,61 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from telegram import Update
+from telegram.ext import Updater, CommandHandler, Job
 from bs4 import BeautifulSoup
+import requests
 from flask import Flask
 import threading
-import requests
-import asyncio
+import time
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
 URL_EVENTO = "https://superticket.bo/La-Bicicleta-de-los-Huanca-II"
-URL_PRINCIPAL = "https://superticket.bo/"
-
-# Guardar estado previo del botón para no spamear
-estado_anterior = None
 
 # -------- Función para revisar el estado del evento --------
-def revisar_evento():
+def revisar_evento(url_evento=URL_EVENTO):
     mensajes = []
     estado_boton = "NO DISPONIBLE"
-    url_actual = URL_EVENTO
+    url_actual = url_evento
 
     try:
-        response = requests.get(URL_EVENTO, timeout=10)
+        response = requests.get(url_evento, timeout=10)
         html_crudo = response.text
         url_actual = response.url
 
-        if response.url == URL_PRINCIPAL:
-            mensajes.append("🔒 Evento aún no activo")
-            return mensajes, estado_boton, url_actual
-        elif response.status_code != 200:
+        if response.status_code != 200:
             mensajes.append(f"❌ Error al cargar la página, status {response.status_code}")
             return mensajes, estado_boton, url_actual
 
-        soup = BeautifulSoup(html_crudo, "lxml")
-        div_boton = soup.find("div", id="div_boton_compra")
-
-        if div_boton:
-            a_tag = div_boton.find("a")
-            if a_tag:
-                texto_a = a_tag.get_text(strip=True).upper()  # Normalizar texto
-                clases = a_tag.get("class", [])
-
-                # Condiciones de compra habilitada
-                compra_textos = ["COMPRA", "COMPRAR", "COMPRAR AHORA", "COMPRAR YA"]
-                if any(palabra in texto_a for palabra in compra_textos) or "btn-success" in clases:
-                    estado_boton = "COMPRAR"
-                    mensajes.append(f"✅ La compra está habilitada (texto: '{texto_a}')")
-                else:
-                    estado_boton = "NO DISPONIBLE"
-                    mensajes.append(f"🔒 La compra NO está habilitada (texto: '{texto_a}', clases: {clases})")
-            else:
-                mensajes.append("ℹ️ No se encontró el botón de compra dentro del div")
-        else:
-            mensajes.append("ℹ️ Página activa pero sin div de botón de compra")
-
     except Exception as e:
         mensajes.append(f"❌ Error al cargar la página: {e}")
+        return mensajes, estado_boton, url_actual
+
+    soup = BeautifulSoup(html_crudo, "lxml")
+
+    # Buscar el div del botón de compra
+    div_boton = soup.find("div", id="div_boton_compra")
+    if div_boton:
+        a_tag = div_boton.find("a")
+        if a_tag:
+            texto_a = a_tag.get_text(strip=True).upper()
+            if "COMPRA" in texto_a:
+                estado_boton = "COMPRAR"
+                mensajes.append("✅ La compra está habilitada")
+            else:
+                mensajes.append(f"🔒 La compra NO está habilitada (texto encontrado: '{texto_a}')")
+        else:
+            mensajes.append("ℹ️ No se encontró etiqueta <a> dentro del div")
+    else:
+        mensajes.append("ℹ️ Página activa pero sin botón de compra")
 
     return mensajes, estado_boton, url_actual
 
-# -------- Job de monitoreo (async) --------
-async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
-    global estado_anterior
-    mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
-    if estado_boton != estado_anterior:
-        estado_anterior = estado_boton
-        texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-        await context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
+# -------- Funciones de comandos de Telegram --------
+def start(update, context):
+    update.message.reply_text("🚀 Bot iniciado correctamente!")
 
-# -------- Comandos del bot --------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 Bot iniciado correctamente!")
-
-async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+def comandos(update, context):
+    update.message.reply_text(
         "/start - Inicia el bot\n"
         "/comandos - Lista de comandos\n"
         "/estado - Muestra el estado actual del evento\n"
@@ -83,17 +63,17 @@ async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ayuda - Instrucciones y recomendaciones"
     )
 
-async def estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
+def estado(update, context):
+    mensajes, estado_boton, url_actual = revisar_evento()
     texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-    await update.message.reply_text(texto_final)
+    update.message.reply_text(texto_final)
 
-async def url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
-    await update.message.reply_text(f"🌐 URL actual: {url_actual}\n📊 Estado del evento: {estado_boton}")
+def url(update, context):
+    mensajes, estado_boton, url_actual = revisar_evento()
+    update.message.reply_text(f"🌐 URL actual: {url_actual}\n📊 Estado del evento: {estado_boton}")
 
-async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+def ayuda(update, context):
+    update.message.reply_text(
         "💡 Usa los comandos para interactuar con el bot:\n"
         "/start - Inicia el bot\n"
         "/estado - Consulta el estado actual del evento\n"
@@ -101,6 +81,12 @@ async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/comandos - Lista todos los comandos\n"
         "/ayuda - Mostrar esta ayuda"
     )
+
+# -------- Job de monitoreo periódico --------
+def monitor_job(context):
+    mensajes, estado_boton, url_actual = revisar_evento()
+    texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
+    context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
 
 # -------- Flask para mantener el bot activo 24/7 --------
 app_flask = Flask(__name__)
@@ -114,21 +100,27 @@ def run_flask():
 
 # -------- Main --------
 def main():
-    threading.Thread(target=run_flask, daemon=True).start()
+    # Ejecutar Flask en un hilo separado
+    threading.Thread(target=run_flask).start()
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    # Iniciar bot de Telegram
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("comandos", comandos))
-    app.add_handler(CommandHandler("estado", estado))
-    app.add_handler(CommandHandler("url", url))
-    app.add_handler(CommandHandler("ayuda", ayuda))
+    # Agregar handlers
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("comandos", comandos))
+    dp.add_handler(CommandHandler("estado", estado))
+    dp.add_handler(CommandHandler("url", url))
+    dp.add_handler(CommandHandler("ayuda", ayuda))
 
-    # Job de monitoreo
-    app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
+    # Job que revisa el evento cada INTERVALO_MONITOREO segundos
+    jq = updater.job_queue
+    jq.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
     print(f"🚀 Bot iniciado correctamente. Monitoreando la página cada {INTERVALO_MONITOREO} segundos.")
-    app.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
     main()
