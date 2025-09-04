@@ -1,6 +1,8 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from bs4 import BeautifulSoup
 import requests
+from flask import Flask
+import threading
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
@@ -93,27 +95,38 @@ async def ayuda(update, context):
         "/ayuda - Mostrar esta ayuda"
     )
 
+# -------- Flask para uptime --------
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot activo 🚀"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
 # -------- Main --------
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    # Iniciar Flask en hilo separado
+    threading.Thread(target=run_flask).start()
+
+    # Iniciar bot de Telegram
+    telegram_app = ApplicationBuilder().token(TOKEN).build()
 
     # Agregar handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("comandos", comandos))
-    app.add_handler(CommandHandler("estado", estado))
-    app.add_handler(CommandHandler("url", url))
-    app.add_handler(CommandHandler("ayuda", ayuda))
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("comandos", comandos))
+    telegram_app.add_handler(CommandHandler("estado", estado))
+    telegram_app.add_handler(CommandHandler("url", url))
+    telegram_app.add_handler(CommandHandler("ayuda", ayuda))
 
     # Job que revisa el evento cada INTERVALO_MONITOREO segundos
-    app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
+    telegram_app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
-    print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
-    print(f"⏱ El bot empezará a monitorear la página cada {INTERVALO_MONITOREO} segundos.")
-
-    app.run_polling()
+    print("🚀 Bot iniciado correctamente con Flask para uptime incluido.")
+    telegram_app.run_polling()
 
 if __name__ == "__main__":
     main()
-
 
 
