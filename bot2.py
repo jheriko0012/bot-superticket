@@ -1,8 +1,9 @@
-from telegram.ext import Updater, CommandHandler, Job
+from telegram.ext import ApplicationBuilder, CommandHandler
 from bs4 import BeautifulSoup
 import requests
 from flask import Flask
 import threading
+import time
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
@@ -49,11 +50,11 @@ def revisar_evento(url_evento=URL_EVENTO):
     return mensajes, estado_boton, url_actual
 
 # -------- Comandos de Telegram --------
-def start(update, context):
-    update.message.reply_text("🚀 Bot iniciado correctamente!")
+async def start(update, context):
+    await update.message.reply_text("🚀 Bot iniciado correctamente!")
 
-def comandos(update, context):
-    update.message.reply_text(
+async def comandos(update, context):
+    await update.message.reply_text(
         "/start - Inicia el bot\n"
         "/comandos - Lista de comandos\n"
         "/estado - Muestra el estado actual del evento\n"
@@ -61,17 +62,17 @@ def comandos(update, context):
         "/ayuda - Instrucciones y recomendaciones"
     )
 
-def estado(update, context):
+async def estado(update, context):
     mensajes, estado_boton, url_actual = revisar_evento()
     texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-    update.message.reply_text(texto_final)
+    await update.message.reply_text(texto_final)
 
-def url(update, context):
+async def url(update, context):
     mensajes, estado_boton, url_actual = revisar_evento()
-    update.message.reply_text(f"🌐 URL actual: {url_actual}\n📊 Estado del evento: {estado_boton}")
+    await update.message.reply_text(f"🌐 URL actual: {url_actual}\n📊 Estado del evento: {estado_boton}")
 
-def ayuda(update, context):
-    update.message.reply_text(
+async def ayuda(update, context):
+    await update.message.reply_text(
         "💡 Usa los comandos para interactuar con el bot:\n"
         "/start - Inicia el bot\n"
         "/estado - Consulta el estado actual del evento\n"
@@ -104,28 +105,30 @@ def run_flask():
 def main():
     threading.Thread(target=run_flask).start()
 
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = ApplicationBuilder().token(TOKEN).build()
 
     # Agregar handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("comandos", comandos))
-    dp.add_handler(CommandHandler("estado", estado))
-    dp.add_handler(CommandHandler("url", url))
-    dp.add_handler(CommandHandler("ayuda", ayuda))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("comandos", comandos))
+    app.add_handler(CommandHandler("estado", estado))
+    app.add_handler(CommandHandler("url", url))
+    app.add_handler(CommandHandler("ayuda", ayuda))
 
-    # Iniciar polling antes de jobs
-    updater.start_polling()
+    # Iniciar polling en un thread separado
+    threading.Thread(target=app.run_polling, kwargs={"poll_interval": 1}, daemon=True).start()
     print("🚀 Bot iniciado. Polling activo.")
 
-    # Job periódico usando threading para evitar problemas de context
+    # Job periódico con threading
     def job_thread():
         while True:
-            monitor_job(updater.bot)
+            monitor_job(app.bot)
             time.sleep(INTERVALO_MONITOREO)
 
     threading.Thread(target=job_thread, daemon=True).start()
-    updater.idle()
+
+    # Mantener main thread activo
+    while True:
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
