@@ -39,15 +39,17 @@ def revisar_evento():
     boton = soup.select_one("a.boton_compra")
     if boton:
         texto_boton = boton.get_text(strip=True).upper()
-        clases_boton = boton.get("class") or []
-        if "AÚN NO DISPONIBLE" in texto_boton or "AUN NO DISPONIBLE" in texto_boton:
+        clases_boton = [cls.lower() for cls in boton.get("class") or []]
+        
+        if "aún no disponible" in texto_boton.lower() or "aun no disponible" in texto_boton.lower():
             estado_boton = "NO DISPONIBLE"
             mensajes.append("🔒 La compra NO está habilitada")
         elif "btn-success" in clases_boton or "COMPRAR" in texto_boton:
             estado_boton = "COMPRAR"
             mensajes.append("✅ La compra está habilitada")
-
-    if not boton:
+        else:
+            mensajes.append("ℹ️ Botón presente pero estado desconocido")
+    else:
         mensajes.append("ℹ️ Página del evento activa, pero sin botón de compra")
 
     return mensajes, estado_boton, url_actual
@@ -114,4 +116,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
