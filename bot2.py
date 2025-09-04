@@ -30,29 +30,35 @@ def revisar_evento():
 
         if response.url == URL_PRINCIPAL:
             mensajes.append("🔒 Evento aún no activo")
-            estado_boton = "NO DISPONIBLE"
-            url_actual = response.url
-            return mensajes, estado_boton, url_actual
+            return mensajes, estado_boton, response.url
         elif response.status_code != 200:
             mensajes.append(f"❌ Error al cargar la página, status {response.status_code}")
-            estado_boton = "NO DISPONIBLE"
-            url_actual = response.url
-            return mensajes, estado_boton, url_actual
+            return mensajes, estado_boton, response.url
 
-        # Revisar si el bloque completo de compra existe
-        if HTML_COMPRA.strip() in html_crudo:
+    except Exception as e:
+        mensajes.append(f"❌ Error al cargar la página: {e}")
+        return mensajes, estado_boton, url_actual
+
+    mensajes.append("✅ Evento habilitado")
+    url_actual = response.url
+    soup = BeautifulSoup(html_crudo, "lxml")
+
+    # Buscamos el div del botón de compra
+    div_boton = soup.find("div", id="div_boton_compra")
+    if div_boton:
+        a_tag = div_boton.find("a", class_="btn-success")
+        if a_tag and "COMPRAR" in a_tag.get_text(strip=True).upper():
             estado_boton = "COMPRAR"
             mensajes.append("✅ La compra está habilitada")
         else:
             estado_boton = "NO DISPONIBLE"
             mensajes.append("🔒 La compra NO está habilitada")
+    else:
+        estado_boton = "NO DISPONIBLE"
+        mensajes.append("ℹ️ Página activa pero sin botón de compra")
 
-        url_actual = response.url
-        return mensajes, estado_boton, url_actual
+    return mensajes, estado_boton, url_actual
 
-    except Exception as e:
-        mensajes.append(f"❌ Error al cargar la página: {e}")
-        return mensajes, estado_boton, url_actual
 
 # -------- Job de monitoreo --------
 async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
@@ -127,3 +133,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
