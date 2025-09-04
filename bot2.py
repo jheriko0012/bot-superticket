@@ -35,21 +35,26 @@ def revisar_evento():
             return mensajes, estado_boton, url_actual
 
         soup = BeautifulSoup(html_crudo, "lxml")
-
         div_boton = soup.find("div", id="div_boton_compra")
+
         if div_boton:
-            a_tag = div_boton.find("a", class_=lambda x: x and "btn-success" in x)
+            a_tag = div_boton.find("a")
             if a_tag:
-                texto_a = a_tag.get_text(strip=True).upper()
-                if "COMPRA" in texto_a.split():
+                texto_a = a_tag.get_text(strip=True).upper()  # Normalizar texto
+                clases = a_tag.get("class", [])
+
+                # Condiciones de compra habilitada
+                compra_textos = ["COMPRA", "COMPRAR", "COMPRAR AHORA", "COMPRAR YA"]
+                if any(palabra in texto_a for palabra in compra_textos) or "btn-success" in clases:
                     estado_boton = "COMPRAR"
-                    mensajes.append("✅ La compra está habilitada")
+                    mensajes.append(f"✅ La compra está habilitada (texto: '{texto_a}')")
                 else:
-                    mensajes.append(f"🔒 La compra NO está habilitada (texto encontrado: '{texto_a}')")
+                    estado_boton = "NO DISPONIBLE"
+                    mensajes.append(f"🔒 La compra NO está habilitada (texto: '{texto_a}', clases: {clases})")
             else:
-                mensajes.append("ℹ️ No se encontró el botón de compra")
+                mensajes.append("ℹ️ No se encontró el botón de compra dentro del div")
         else:
-            mensajes.append("ℹ️ Página activa pero sin botón de compra")
+            mensajes.append("ℹ️ Página activa pero sin div de botón de compra")
 
     except Exception as e:
         mensajes.append(f"❌ Error al cargar la página: {e}")
@@ -59,7 +64,6 @@ def revisar_evento():
 # -------- Job de monitoreo (async) --------
 async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
     global estado_anterior
-    # Ejecutar la función de requests en un hilo para no bloquear asyncio
     mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
     if estado_boton != estado_anterior:
         estado_anterior = estado_boton
