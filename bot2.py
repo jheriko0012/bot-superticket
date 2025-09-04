@@ -1,38 +1,39 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from bs4 import BeautifulSoup
-import requests
 import time
+import requests
+from bs4 import BeautifulSoup
+from telegram import Bot
+from telegram.ext import ApplicationBuilder, CommandHandler
 
-# -------- Configuración --------
-INTERVALO_MONITOREO = 60  # segundos
+# ---------------- CONFIG ----------------
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
-CHAT_ID = 6944124547
-URL_EVENTO = "https://superticket.bo/evento/..."  # URL del evento
+CHAT_ID = "6944124547"  # Lo puedes dejar así, se obtiene automáticamente del chat
+URL_EVENTO = "https://superticket.bo/Venta-de-Metros-Lineales"
+URL_PRINCIPAL = "https://superticket.bo"
+INTERVALO_MONITOREO = 30  # segundos
 
-# -------- Función para revisar el estado del evento --------
+bot = Bot(token=TOKEN)
+
+# ---------------- FUNCIONES ----------------
 def revisar_evento():
     mensajes = []
-    estado_boton = "NO DISPONIBLE"
-    url_actual = URL_EVENTO
+    estado_boton = "DESCONOCIDO"
 
     try:
-        response = requests.get(URL_EVENTO, timeout=10)
-        if response.status_code != 200 or response.url != URL_EVENTO:
-            mensajes.append("🔒 Página aún no activada")
+        response = requests.get(URL_EVENTO, allow_redirects=True, timeout=15)
+        final_url = response.url
+
+        if final_url == URL_PRINCIPAL:
+            mensajes.append("🔒 Evento aún no activo")
             estado_boton = "NO DISPONIBLE"
-            url_actual = response.url
-            return mensajes, estado_boton, url_actual
+            return mensajes, estado_boton, final_url
+
     except Exception as e:
         mensajes.append(f"❌ Error al cargar la página: {e}")
-        return mensajes, estado_boton, url_actual
+        return mensajes, estado_boton, URL_EVENTO
 
-    soup = BeautifulSoup(response.text, "lxml")
-
-    overlay = soup.select_one(".overlay-content")
-    if overlay:
-        texto_overlay = overlay.get_text(strip=True)
-        if "Evento finalizado" in texto_overlay:
-            mensajes.append("❌ El evento sigue cerrado")
+    # Si sigue en la URL del evento
+    html = response.text
+    soup = BeautifulSoup(html, "lxml")
 
     boton = soup.select_one("a.boton_compra")
     if boton:
@@ -44,41 +45,46 @@ def revisar_evento():
         elif "btn-success" in clases_boton or "COMPRAR" in texto_boton:
             estado_boton = "COMPRAR"
             mensajes.append("✅ La compra está habilitada")
-
-    if not overlay and not boton:
+    else:
         mensajes.append("✅ Página del evento activa, pero sin información específica")
+        estado_boton = "DESCONOCIDO"
 
-    return mensajes, estado_boton, url_actual
+    return mensajes, estado_boton, final_url
 
-# -------- Job de monitoreo --------
-async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
+# ---------------- JOB ----------------
+def monitor_job():
     print("🔍 Analizando la página del evento...")
     mensajes, estado_boton, url_actual = revisar_evento()
-    print(f"📊 Estado actual: {estado_boton}, URL: {url_actual}")
-    texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-    await context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
-    print("✅ Mensaje enviado a Telegram\n")
+    estado_actual = f"📊 Estado actual: {estado_boton}, URL: {url_actual}"
 
-# -------- Comandos --------
+    for mensaje in mensajes:
+        print(mensaje)
+
+    print(estado_actual)
+    try:
+        bot.send_message(chat_id=CHAT_ID, text="\n".join(mensajes) + f"\n{estado_actual}")
+        print("✅ Mensaje enviado a Telegram")
+    except Exception as e:
+        print(f"❌ Error al enviar mensaje: {e}")
+
+# ---------------- COMANDOS ----------------
 async def start(update, context):
-    await update.message.reply_text("Bot iniciado!")
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.\n"
+             f"⏱ El bot empezará a monitorear la página cada {INTERVALO_MONITOREO} segundos."
+    )
 
-async def comandos(update, context):
-    await update.message.reply_text("/start - Inicia el bot\n/comandos - Lista de comandos")
-
-# -------- Main --------
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("comandos", comandos))
-
-    app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
-
+# ---------------- MAIN ----------------
+async def main():
     print("🚀 Bot iniciado correctamente con todos los comandos y URL incluida en los mensajes.")
-    print(f"⏱ El bot empezará a monitorear la página cada {INTERVALO_MONITOREO} segundos.")
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
 
-    app.run_polling()
+    while True:
+        monitor_job()
+        time.sleep(INTERVALO_MONITOREO)
 
-if __name__ == "__main__":
-    main()
+# ---------------- RUN ----------------
+import asyncio
+asyncio.run(main())
