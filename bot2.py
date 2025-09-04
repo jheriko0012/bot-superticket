@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 import requests
 from flask import Flask
 import threading
-import time
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
@@ -31,9 +30,8 @@ def revisar_evento(url_evento=URL_EVENTO):
         return mensajes, estado_boton, url_actual
 
     soup = BeautifulSoup(html_crudo, "lxml")
-
-    # Buscar el div del botón de compra
     div_boton = soup.find("div", id="div_boton_compra")
+
     if div_boton:
         a_tag = div_boton.find("a")
         if a_tag:
@@ -50,7 +48,7 @@ def revisar_evento(url_evento=URL_EVENTO):
 
     return mensajes, estado_boton, url_actual
 
-# -------- Funciones de comandos de Telegram --------
+# -------- Comandos de Telegram --------
 def start(update, context):
     update.message.reply_text("🚀 Bot iniciado correctamente!")
 
@@ -83,12 +81,16 @@ def ayuda(update, context):
     )
 
 # -------- Job de monitoreo periódico --------
-def monitor_job(context):
+def monitor_job(bot):
     mensajes, estado_boton, url_actual = revisar_evento()
     texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-    context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
+    try:
+        bot.send_message(chat_id=CHAT_ID, text=texto_final)
+        print("✅ Mensaje enviado correctamente")
+    except Exception as e:
+        print(f"❌ Error al enviar mensaje: {e}")
 
-# -------- Flask para mantener el bot activo 24/7 --------
+# -------- Flask para mantener activo --------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -100,10 +102,8 @@ def run_flask():
 
 # -------- Main --------
 def main():
-    # Ejecutar Flask en un hilo separado
     threading.Thread(target=run_flask).start()
 
-    # Iniciar bot de Telegram
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -114,12 +114,17 @@ def main():
     dp.add_handler(CommandHandler("url", url))
     dp.add_handler(CommandHandler("ayuda", ayuda))
 
-    # Job que revisa el evento cada INTERVALO_MONITOREO segundos
-    jq = updater.job_queue
-    jq.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
-
-    print(f"🚀 Bot iniciado correctamente. Monitoreando la página cada {INTERVALO_MONITOREO} segundos.")
+    # Iniciar polling antes de jobs
     updater.start_polling()
+    print("🚀 Bot iniciado. Polling activo.")
+
+    # Job periódico usando threading para evitar problemas de context
+    def job_thread():
+        while True:
+            monitor_job(updater.bot)
+            time.sleep(INTERVALO_MONITOREO)
+
+    threading.Thread(target=job_thread, daemon=True).start()
     updater.idle()
 
 if __name__ == "__main__":
