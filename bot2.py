@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from flask import Flask
 import threading
 import requests
-import time
+import asyncio
 
 # -------- Configuración --------
 INTERVALO_MONITOREO = 30  # segundos
@@ -56,21 +56,22 @@ def revisar_evento():
 
     return mensajes, estado_boton, url_actual
 
-# -------- Job de monitoreo (solo envía mensaje si cambia el estado) --------
-def monitor_job_sync(context):
+# -------- Job de monitoreo (async) --------
+async def monitor_job(context: ContextTypes.DEFAULT_TYPE):
     global estado_anterior
-    mensajes, estado_boton, url_actual = revisar_evento()
+    # Ejecutar la función de requests en un hilo para no bloquear asyncio
+    mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
     if estado_boton != estado_anterior:
         estado_anterior = estado_boton
         texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-        context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
+        await context.bot.send_message(chat_id=CHAT_ID, text=texto_final)
 
 # -------- Comandos del bot --------
-def start(update: Update, context):
-    update.message.reply_text("🚀 Bot iniciado correctamente!")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚀 Bot iniciado correctamente!")
 
-def comandos(update: Update, context):
-    update.message.reply_text(
+async def comandos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "/start - Inicia el bot\n"
         "/comandos - Lista de comandos\n"
         "/estado - Muestra el estado actual del evento\n"
@@ -78,17 +79,17 @@ def comandos(update: Update, context):
         "/ayuda - Instrucciones y recomendaciones"
     )
 
-def estado(update: Update, context):
-    mensajes, estado_boton, url_actual = revisar_evento()
+async def estado(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
     texto_final = "\n".join(mensajes) + f"\n🌐 URL: {url_actual}"
-    update.message.reply_text(texto_final)
+    await update.message.reply_text(texto_final)
 
-def url(update: Update, context):
-    mensajes, estado_boton, url_actual = revisar_evento()
-    update.message.reply_text(f"🌐 URL actual: {url_actual}\n📊 Estado del evento: {estado_boton}")
+async def url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensajes, estado_boton, url_actual = await asyncio.to_thread(revisar_evento)
+    await update.message.reply_text(f"🌐 URL actual: {url_actual}\n📊 Estado del evento: {estado_boton}")
 
-def ayuda(update: Update, context):
-    update.message.reply_text(
+async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "💡 Usa los comandos para interactuar con el bot:\n"
         "/start - Inicia el bot\n"
         "/estado - Consulta el estado actual del evento\n"
@@ -120,7 +121,7 @@ def main():
     app.add_handler(CommandHandler("ayuda", ayuda))
 
     # Job de monitoreo
-    app.job_queue.run_repeating(monitor_job_sync, interval=INTERVALO_MONITOREO, first=5)
+    app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
 
     print(f"🚀 Bot iniciado correctamente. Monitoreando la página cada {INTERVALO_MONITOREO} segundos.")
     app.run_polling()
