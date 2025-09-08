@@ -5,7 +5,7 @@ from flask import Flask
 import threading
 
 # -------- Configuración --------
-INTERVALO_MONITOREO = 30  # segundos
+INTERVALO_MONITOREO = 9 # segundos
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
 URL_EVENTO = "https://superticket.bo/Venta-de-Metros-Lineales"
@@ -20,7 +20,7 @@ def revisar_evento():
     try:
         response = requests.get(URL_EVENTO, timeout=10)
         if response.url == URL_PRINCIPAL:
-            mensajes.append("🔒 Evento aún no activo")
+            mensajes.append("🔒 venta aún no habilitado")
             estado_boton = "NO DISPONIBLE"
             url_actual = response.url
             return mensajes, estado_boton, url_actual
@@ -34,7 +34,7 @@ def revisar_evento():
         return mensajes, estado_boton, url_actual
 
     # Página del evento activa
-    mensajes.append("✅ Evento habilitado")
+    mensajes.append("✅ Evento habilitado compra habilitada")
     url_actual = response.url
 
     soup = BeautifulSoup(response.text, "lxml")
@@ -121,7 +121,7 @@ def main():
     telegram_app.add_handler(CommandHandler("ayuda", ayuda))
 
     # Job que revisa el evento cada INTERVALO_MONITOREO segundos
-    telegram_app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=5)
+    telegram_app.job_queue.run_repeating(monitor_job, interval=INTERVALO_MONITOREO, first=3)
 
     print("🚀 Bot iniciado correctamente con Flask para uptime incluido.")
     telegram_app.run_polling()
