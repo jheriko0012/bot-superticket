@@ -5,7 +5,7 @@ from flask import Flask
 import threading
 
 # -------- Configuración --------
-INTERVALO_MONITOREO = 10# segundos
+INTERVALO_MONITOREO = 15# segundos
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
 URL_EVENTO = "https://superticket.bo/Venta-de-Metros-Lineales"
@@ -20,7 +20,7 @@ def revisar_evento():
     try:
         response = requests.get(URL_EVENTO, timeout=10)
         if response.url == URL_PRINCIPAL:
-            mensajes.append("🔒 venta aún no habilitado")
+            mensajes.append("🔒 Venta aún no habierta espera xd")
             estado_boton = "NO DISPONIBLE"
             url_actual = response.url
             return mensajes, estado_boton, url_actual
@@ -34,7 +34,7 @@ def revisar_evento():
         return mensajes, estado_boton, url_actual
 
     # Página del evento activa
-    mensajes.append("✅ Evento habilitado compra habilitada")
+    mensajes.append("✅ Compra habilitada Evento abierto")
     url_actual = response.url
 
     soup = BeautifulSoup(response.text, "lxml")
