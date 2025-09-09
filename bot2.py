@@ -5,7 +5,7 @@ from flask import Flask
 import threading
 
 # -------- Configuración --------
-INTERVALO_MONITOREO = 20# segundos
+INTERVALO_MONITOREO = 10# segundos
 TOKEN = "7301448066:AAHQYM4AZlQLWK9cNJWDEgac8OcikvPAvMY"
 CHAT_ID = 6944124547
 URL_EVENTO = "https://superticket.bo/Venta-de-Metros-Lineales"
