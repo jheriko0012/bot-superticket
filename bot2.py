@@ -18,7 +18,7 @@ def revisar_evento():
     url_actual = URL_EVENTO
 
     try:
-        response = requests.get(URL_EVENTO, timeout=20)
+        response = requests.get(URL_EVENTO, timeout=10)
         if response.url == URL_PRINCIPAL:
             mensajes.append("🔒 venta aún no habilitado")
             estado_boton = "NO DISPONIBLE"
